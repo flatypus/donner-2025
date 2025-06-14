@@ -28,6 +28,28 @@ interface SharedModelProps {
   collisionOnly?: boolean;
 }
 
+function Crosshair() {
+  return (
+    <div
+      style={{
+        position: "fixed",
+        top: "50%",
+        left: "50%",
+        width: "24px",
+        height: "24px",
+        transform: "translate(-50%, -50%)",
+        pointerEvents: "none",
+        zIndex: 1000,
+      }}
+    >
+      <svg width="24" height="24">
+        <line x1="12" y1="6" x2="12" y2="18" stroke="#fff" strokeWidth="2" />
+        <line x1="6" y1="12" x2="18" y2="12" stroke="#fff" strokeWidth="2" />
+      </svg>
+    </div>
+  );
+}
+
 function SharedModel({
   modelPath,
   position = [0, 0, 0],
@@ -217,6 +239,12 @@ function FPSControls({ loaded }: { loaded: boolean }) {
     }
 
     prevTime.current = time;
+
+    // Respawn if fallen below -10
+    if (camera.position.y < -10) {
+      camera.position.set(-11.3, EYE_HEIGHT, 23);
+      velocity.current.set(0, 0, 0);
+    }
   });
 
   return null;
@@ -252,9 +280,50 @@ function CanvasLoader({ setReady }: { setReady: (ready: boolean) => void }) {
 export default function App() {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [pointerLocked, setPointerLocked] = useState(false);
+
+  // Pointer lock event listener
+  useEffect(() => {
+    const handlePointerLockChange = () => {
+      setPointerLocked(document.pointerLockElement === document.body);
+    };
+    document.addEventListener("pointerlockchange", handlePointerLockChange);
+    return () => {
+      document.removeEventListener(
+        "pointerlockchange",
+        handlePointerLockChange,
+      );
+    };
+  }, []);
 
   return (
-    <div className="w-full h-screen bg-white">
+    <div
+      className="w-full h-screen bg-white"
+      style={{ cursor: pointerLocked ? "none" : "default" }}
+    >
+      {/* Crosshair */}
+      {ready && pointerLocked && <Crosshair />}
+      {/* Click to focus overlay */}
+      {!pointerLocked && ready && (
+        <div
+          onClick={() => document.body.requestPointerLock()}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.6)",
+            color: "#fff",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 32,
+            zIndex: 2000,
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+        >
+          Click to focus
+        </div>
+      )}
       <Canvas camera={{ fov: 75, position: [-11.3, EYE_HEIGHT, 23] }}>
         <color attach="background" args={[ready ? "#534c3f" : "#000000"]} />
         <ambientLight intensity={0.5} />
