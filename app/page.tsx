@@ -1,11 +1,61 @@
 "use client";
 
-import { Suspense, useEffect, useRef } from "react";
-import { Canvas, useFrame, useThree } from "react-three-fiber";
+import { Suspense, useEffect, useRef, useState } from "react";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { useProgress, Html, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import { Octree } from "three/addons/math/Octree.js";
+import { Capsule } from "three/addons/math/Capsule.js";
 
-function FPSControls() {
+// Create a shared octree instance
+const worldOctree = new Octree();
+const SCALE = 5;
+
+// Player constants
+const PLAYER_HEIGHT = 1.8;
+const PLAYER_RADIUS = 0.35;
+const EYE_HEIGHT = 3; // Camera eye level from ground
+const GRAVITY = 30;
+const JUMP_FORCE = 10;
+const PLAYER_SPEED = 5;
+
+interface SharedModelProps {
+  modelPath: string;
+  position?: [number, number, number];
+  scale?: [number, number, number];
+  addToOctree?: boolean;
+  onLoad?: () => void;
+  collisionOnly?: boolean;
+}
+
+function SharedModel({
+  modelPath,
+  position = [0, 0, 0],
+  scale = [SCALE, SCALE, SCALE],
+  addToOctree = false,
+  onLoad,
+  collisionOnly = false,
+}: SharedModelProps) {
+  const { scene } = useGLTF(modelPath) as { scene: THREE.Group };
+
+  useEffect(() => {
+    if (addToOctree) {
+      // Clone and scale the scene for collision detection
+      const scaledScene = scene.clone();
+      scaledScene.scale.set(SCALE, SCALE, SCALE);
+      scaledScene.updateMatrixWorld(true);
+
+      // Add the scaled ground to the octree
+      worldOctree.fromGraphNode(scaledScene);
+    }
+    onLoad?.();
+  }, [scene, addToOctree, onLoad]);
+
+  if (collisionOnly) return null;
+  return <primitive object={scene} position={position} scale={scale} />;
+}
+
+function FPSControls({ loaded }: { loaded: boolean }) {
   const { camera } = useThree();
   const moveForward = useRef(false);
   const moveBackward = useRef(false);
@@ -15,6 +65,13 @@ function FPSControls() {
   const velocity = useRef(new THREE.Vector3());
   const prevTime = useRef(performance.now());
   const euler = useRef(new THREE.Euler(0, 0, 0, "YXZ"));
+  const playerCollider = useRef(
+    new Capsule(
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, PLAYER_HEIGHT, 0),
+      PLAYER_RADIUS,
+    ),
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -33,7 +90,7 @@ function FPSControls() {
           break;
         case "Space":
           if (canJump.current) {
-            velocity.current.y = 10;
+            velocity.current.y = JUMP_FORCE;
             canJump.current = false;
           }
           break;
@@ -90,7 +147,12 @@ function FPSControls() {
     const time = performance.now();
     const delta = (time - prevTime.current) / 1000;
 
-    velocity.current.y -= 9.8 * delta; // gravity
+    // Only apply gravity if all models are loaded
+    if (loaded) {
+      velocity.current.y -= GRAVITY * delta;
+    } else {
+      velocity.current.y = 0;
+    }
 
     // Get camera's forward and right vectors
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
@@ -98,34 +160,60 @@ function FPSControls() {
     );
     const right = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
 
-    // Reset velocity
+    // Reset horizontal velocity
     velocity.current.x = 0;
     velocity.current.z = 0;
 
     // Calculate movement direction
     if (moveForward.current) {
-      velocity.current.addScaledVector(forward, 10.0 * delta);
+      velocity.current.addScaledVector(forward, PLAYER_SPEED * delta);
     }
     if (moveBackward.current) {
-      velocity.current.addScaledVector(forward, -10.0 * delta);
+      velocity.current.addScaledVector(forward, -PLAYER_SPEED * delta);
     }
     if (moveRight.current) {
-      velocity.current.addScaledVector(right, 10.0 * delta);
+      velocity.current.addScaledVector(right, PLAYER_SPEED * delta);
     }
     if (moveLeft.current) {
-      velocity.current.addScaledVector(right, -10.0 * delta);
+      velocity.current.addScaledVector(right, -PLAYER_SPEED * delta);
     }
+
+    // Update player collider to follow camera position
+    playerCollider.current.start.set(
+      camera.position.x,
+      camera.position.y - EYE_HEIGHT,
+      camera.position.z,
+    );
+    playerCollider.current.end.set(
+      camera.position.x,
+      camera.position.y - EYE_HEIGHT + PLAYER_HEIGHT,
+      camera.position.z,
+    );
 
     // Apply velocity to camera position
     camera.position.x += velocity.current.x;
     camera.position.y += velocity.current.y * delta;
     camera.position.z += velocity.current.z;
 
-    // Simple ground collision
-    if (camera.position.y < 1.6) {
-      velocity.current.y = 0;
-      camera.position.y = 1.6;
-      canJump.current = true;
+    // Check for collisions
+    const result = worldOctree.capsuleIntersect(playerCollider.current);
+    if (result) {
+      if (result.normal.y > 0) {
+        // Ground collision
+        canJump.current = true;
+        velocity.current.y = 0;
+        // Position camera at eye level above ground
+        // camera.position.y = result.depth + EYE_HEIGHT;
+        camera.position.y += result.depth;
+      } else {
+        // Wall/ceiling collision
+        velocity.current.addScaledVector(
+          result.normal,
+          -result.normal.dot(velocity.current),
+        );
+        // Prevent clipping through surfaces
+        camera.position.addScaledVector(result.normal, result.depth);
+      }
     }
 
     prevTime.current = time;
@@ -134,20 +222,14 @@ function FPSControls() {
   return null;
 }
 
-function Model() {
-  const { scene } = useGLTF("/donner.glb");
-  const scale = 10;
-  return (
-    <primitive
-      object={scene}
-      position={[0, 0, 0]}
-      scale={[scale, scale, scale]}
-    />
-  );
-}
-
-function CanvasLoader() {
+function CanvasLoader({ setReady }: { setReady: (ready: boolean) => void }) {
   const { progress } = useProgress();
+  useEffect(() => {
+    if (progress === 100) {
+      setReady(true);
+    }
+  }, [progress, setReady]);
+
   return (
     <mesh>
       <Html center>
@@ -168,16 +250,26 @@ function CanvasLoader() {
 }
 
 export default function App() {
+  const [ready, setReady] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
   return (
     <div className="w-full h-screen bg-white">
-      <Canvas camera={{ fov: 75, position: [0, 1.6, 5] }}>
-        <color attach="background" args={["#ffffff"]} />
+      <Canvas camera={{ fov: 75, position: [-11.3, EYE_HEIGHT, 23] }}>
+        <color attach="background" args={[ready ? "#534c3f" : "#000000"]} />
         <ambientLight intensity={0.5} />
         <directionalLight position={[10, 10, 5]} intensity={2} />
-        <Suspense fallback={<CanvasLoader />}>
-          <Model />
+        <Suspense fallback={<CanvasLoader setReady={setReady} />}>
+          <SharedModel modelPath="/donner.glb" onLoad={() => setLoaded(true)} />
+          <SharedModel
+            modelPath="/ground.glb"
+            position={[0, -2, 0]}
+            addToOctree
+            onLoad={() => setLoaded(true)}
+            collisionOnly
+          />
         </Suspense>
-        <FPSControls />
+        <FPSControls loaded={loaded} />
       </Canvas>
     </div>
   );
