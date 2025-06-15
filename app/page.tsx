@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Canvas, useFrame, useThree, useLoader } from "@react-three/fiber";
 import { useProgress, Html, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
@@ -279,10 +279,20 @@ function FloatingHologramImage({
   const texture = useLoader(TextureLoader, imageUrl);
   const meshRef = useRef<THREE.Mesh>(null);
   const borderRef = useRef<THREE.Mesh>(null);
+  const [scale, setScale] = useState(1);
   const [hovered, setHovered] = useState(false);
 
-  const X_SIZE = hovered ? 2.05 : 2;
-  const Y_SIZE = hovered ? 1.25 : 1.2;
+  const SCALE = hovered ? 3 : 1;
+  const BASE_WIDTH = 0.4 * SCALE;
+  const BASE_HEIGHT = BASE_WIDTH * scale;
+
+  useLayoutEffect(() => {
+    const image = new Image();
+    image.src = imageUrl;
+    image.onload = () => {
+      setScale(image.height / image.width);
+    };
+  }, [imageUrl]);
 
   // Animate floating and billboard
   useFrame(({ camera, clock }) => {
@@ -291,14 +301,12 @@ function FloatingHologramImage({
 
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-    const intersects = raycaster.intersectObjects(
-      meshRef.current ? [meshRef.current] : [],
-    );
-
-    if (hovered && intersects.length === 0) setHovered(false);
-    if (!hovered && intersects.length > 0) setHovered(true);
 
     if (meshRef.current) {
+      const intersect = raycaster.intersectObject(meshRef.current);
+      if (intersect.length > 0) setHovered(true);
+      else setHovered(false);
+
       meshRef.current.position.y = y;
       meshRef.current.lookAt(lookAt);
     }
@@ -320,19 +328,18 @@ function FloatingHologramImage({
 
   return (
     <>
-      {hovered && (
-        <mesh ref={borderRef}>
-          <planeGeometry args={[X_SIZE + 0.05, Y_SIZE + 0.05]} />
-          <meshBasicMaterial
-            color="#00ffff"
-            transparent
-            opacity={0.8}
-            side={THREE.DoubleSide}
-          />
-        </mesh>
-      )}
+      <mesh ref={borderRef}>
+        <planeGeometry args={[BASE_WIDTH + 0.05, BASE_HEIGHT + 0.05]} />
+        <meshBasicMaterial
+          color="#00ffff"
+          transparent
+          opacity={0.8}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+
       <mesh ref={meshRef} position={position}>
-        <planeGeometry args={[X_SIZE, Y_SIZE]} />
+        <planeGeometry args={[BASE_WIDTH, BASE_HEIGHT]} />
         <meshBasicMaterial map={texture} transparent opacity={1} color="#fff" />
       </mesh>
     </>
