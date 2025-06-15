@@ -100,6 +100,7 @@ function FPSControls() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      console.log(camera.position);
       switch (event.code) {
         case "KeyW":
           moveForward.current = true;
@@ -271,18 +272,23 @@ function CanvasLoader({ setReady }: { setReady: (ready: boolean) => void }) {
 
 function FloatingHologramImage({
   position,
+  scale: scaleProp = 1,
   imageUrl,
+  message,
 }: {
-  position: [number, number, number];
+  position: { x: number; z: number };
   imageUrl: string;
+  scale?: number;
+  message?: string;
 }) {
   const texture = useLoader(TextureLoader, imageUrl);
   const meshRef = useRef<THREE.Mesh>(null);
   const borderRef = useRef<THREE.Mesh>(null);
+  const messageRef = useRef<THREE.Mesh>(null);
+
   const [scale, setScale] = useState(1);
   const [hovered, setHovered] = useState(false);
-
-  const SCALE = hovered ? 3 : 1;
+  const SCALE = hovered ? 10 * scaleProp : 3 * scaleProp;
   const BASE_WIDTH = 0.4 * SCALE;
   const BASE_HEIGHT = BASE_WIDTH * scale;
 
@@ -296,7 +302,7 @@ function FloatingHologramImage({
 
   // Animate floating and billboard
   useFrame(({ camera, clock }) => {
-    const y = position[1] + Math.sin(clock.getElapsedTime() * 2) * 0.05 + 1.5;
+    const y = EYE_HEIGHT + Math.sin(clock.getElapsedTime() * 2) * 0.05 + 1;
     const lookAt = new THREE.Vector3(camera.position.x, y, camera.position.z);
 
     const raycaster = new THREE.Raycaster();
@@ -313,9 +319,8 @@ function FloatingHologramImage({
 
     if (borderRef.current) {
       borderRef.current.position.copy(
-        new THREE.Vector3(position[0], y, position[2]),
+        new THREE.Vector3(position.x, y, position.z),
       );
-      borderRef.current.position.y = y;
       borderRef.current.lookAt(lookAt);
 
       // Move border slightly behind the image
@@ -323,6 +328,13 @@ function FloatingHologramImage({
         .subVectors(camera.position, borderRef.current.position)
         .normalize();
       borderRef.current.position.addScaledVector(cameraDirection, -0.01);
+    }
+
+    if (messageRef.current) {
+      messageRef.current.position.copy(
+        new THREE.Vector3(position.x, y - BASE_HEIGHT * 0.6, position.z),
+      );
+      messageRef.current.lookAt(lookAt);
     }
   });
 
@@ -338,10 +350,20 @@ function FloatingHologramImage({
         />
       </mesh>
 
-      <mesh ref={meshRef} position={position}>
+      <mesh ref={meshRef} position={[position.x, EYE_HEIGHT, position.z]}>
         <planeGeometry args={[BASE_WIDTH, BASE_HEIGHT]} />
         <meshBasicMaterial map={texture} transparent opacity={1} color="#fff" />
       </mesh>
+
+      {hovered && message && (
+        <mesh ref={messageRef}>
+          <Html center className="whitespace-nowrap">
+            <div className="text-white text-center mt-8 font-medium text-4xl">
+              {message}
+            </div>
+          </Html>
+        </mesh>
+      )}
     </>
   );
 }
@@ -404,10 +426,29 @@ export default function App() {
             onLoad={() => setLoaded(true)}
             collisionOnly
           />
-          {/* Floating hologram image at world spawn */}
           <FloatingHologramImage
-            position={[-10, EYE_HEIGHT, 24]}
+            position={{ x: 24.7, z: -18.4 }}
             imageUrl="/constitution.jpg"
+            message="The Donner Constitution!"
+          />
+          <FloatingHologramImage
+            position={{ x: -11.88, z: 16.51 }}
+            imageUrl="/ras.jpg"
+            message="Our wonderful Resident Assistants"
+          />
+          <FloatingHologramImage
+            position={{ x: 11, z: -6 }}
+            imageUrl="/lounge.jpg"
+          />
+          <FloatingHologramImage
+            position={{ x: -3.76, z: 17.89 }}
+            imageUrl="/lastweek.jpg"
+            message="Last Week at Donner"
+          />
+          <FloatingHologramImage
+            position={{ x: -8.35, z: 30.15 }}
+            imageUrl="/map.jpg"
+            message="Map of Donner"
           />
         </Suspense>
         {loaded && <FPSControls />}
