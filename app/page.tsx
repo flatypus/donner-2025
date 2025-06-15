@@ -16,7 +16,6 @@ const PLAYER_HEIGHT = 1.8;
 const PLAYER_RADIUS = 0.35;
 const EYE_HEIGHT = 3; // Camera eye level from ground
 const GRAVITY = 30;
-const JUMP_FORCE = 10;
 const PLAYER_SPEED = 5;
 
 interface SharedModelProps {
@@ -77,7 +76,7 @@ function SharedModel({
   return <primitive object={scene} position={position} scale={scale} />;
 }
 
-function FPSControls({ loaded }: { loaded: boolean }) {
+function FPSControls() {
   const { camera } = useThree();
   const moveForward = useRef(false);
   const moveBackward = useRef(false);
@@ -109,12 +108,6 @@ function FPSControls({ loaded }: { loaded: boolean }) {
           break;
         case "KeyD":
           moveRight.current = true;
-          break;
-        case "Space":
-          if (canJump.current) {
-            velocity.current.y = JUMP_FORCE;
-            canJump.current = false;
-          }
           break;
       }
     };
@@ -169,12 +162,7 @@ function FPSControls({ loaded }: { loaded: boolean }) {
     const time = performance.now();
     const delta = (time - prevTime.current) / 1000;
 
-    // Only apply gravity if all models are loaded
-    if (loaded) {
-      velocity.current.y -= GRAVITY * delta;
-    } else {
-      velocity.current.y = 0;
-    }
+    velocity.current.y -= GRAVITY * delta;
 
     // Get camera's forward and right vectors
     const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(
@@ -325,9 +313,8 @@ export default function App() {
         </div>
       )}
       <Canvas camera={{ fov: 75, position: [-11.3, EYE_HEIGHT, 23] }}>
-        <color attach="background" args={[ready ? "#534c3f" : "#000000"]} />
-        <ambientLight intensity={0.5} />
-        <directionalLight position={[10, 10, 5]} intensity={2} />
+        <color attach="background" args={[ready ? "#9a9392" : "#000000"]} />
+        <ambientLight intensity={2} />
         <Suspense fallback={<CanvasLoader setReady={setReady} />}>
           <SharedModel modelPath="/donner.glb" onLoad={() => setLoaded(true)} />
           <SharedModel
@@ -338,7 +325,7 @@ export default function App() {
             collisionOnly
           />
         </Suspense>
-        <FPSControls loaded={loaded} />
+        {loaded && <FPSControls />}
       </Canvas>
     </div>
   );
