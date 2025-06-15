@@ -1,11 +1,15 @@
 "use client";
 
 import { Suspense, useEffect, useRef, useState } from "react";
-import { Canvas, useFrame, useThree } from "@react-three/fiber";
+import { Canvas, useFrame, useThree, useLoader } from "@react-three/fiber";
 import { useProgress, Html, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { Octree } from "three/addons/math/Octree.js";
 import { Capsule } from "three/addons/math/Capsule.js";
+import { TextureLoader } from "three";
+import { CiDesktopMouse1 } from "react-icons/ci";
+import { FaKeyboard } from "react-icons/fa";
+import { GiFishEscape } from "react-icons/gi";
 
 // Create a shared octree instance
 const worldOctree = new Octree();
@@ -265,6 +269,76 @@ function CanvasLoader({ setReady }: { setReady: (ready: boolean) => void }) {
   );
 }
 
+function FloatingHologramImage({
+  position,
+  imageUrl,
+}: {
+  position: [number, number, number];
+  imageUrl: string;
+}) {
+  const texture = useLoader(TextureLoader, imageUrl);
+  const meshRef = useRef<THREE.Mesh>(null);
+  const borderRef = useRef<THREE.Mesh>(null);
+  const [hovered, setHovered] = useState(false);
+
+  const X_SIZE = hovered ? 2.05 : 2;
+  const Y_SIZE = hovered ? 1.25 : 1.2;
+
+  // Animate floating and billboard
+  useFrame(({ camera, clock }) => {
+    const y = position[1] + Math.sin(clock.getElapsedTime() * 2) * 0.05 + 1.5;
+    const lookAt = new THREE.Vector3(camera.position.x, y, camera.position.z);
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const intersects = raycaster.intersectObjects(
+      meshRef.current ? [meshRef.current] : [],
+    );
+
+    if (hovered && intersects.length === 0) setHovered(false);
+    if (!hovered && intersects.length > 0) setHovered(true);
+
+    if (meshRef.current) {
+      meshRef.current.position.y = y;
+      meshRef.current.lookAt(lookAt);
+    }
+
+    if (borderRef.current) {
+      borderRef.current.position.copy(
+        new THREE.Vector3(position[0], y, position[2]),
+      );
+      borderRef.current.position.y = y;
+      borderRef.current.lookAt(lookAt);
+
+      // Move border slightly behind the image
+      const cameraDirection = new THREE.Vector3()
+        .subVectors(camera.position, borderRef.current.position)
+        .normalize();
+      borderRef.current.position.addScaledVector(cameraDirection, -0.01);
+    }
+  });
+
+  return (
+    <>
+      {hovered && (
+        <mesh ref={borderRef}>
+          <planeGeometry args={[X_SIZE + 0.05, Y_SIZE + 0.05]} />
+          <meshBasicMaterial
+            color="#00ffff"
+            transparent
+            opacity={0.8}
+            side={THREE.DoubleSide}
+          />
+        </mesh>
+      )}
+      <mesh ref={meshRef} position={position}>
+        <planeGeometry args={[X_SIZE, Y_SIZE]} />
+        <meshBasicMaterial map={texture} transparent opacity={1} color="#fff" />
+      </mesh>
+    </>
+  );
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -294,22 +368,21 @@ export default function App() {
       {/* Click to focus overlay */}
       {!pointerLocked && ready && (
         <div
+          className="absolute inset-0 flex items-center justify-center font-bold text-white text-4xl z-50 cursor-pointer select-none"
           onClick={() => document.body.requestPointerLock()}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            color: "#fff",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 32,
-            zIndex: 2000,
-            cursor: "pointer",
-            userSelect: "none",
-          }}
+          style={{ background: "rgba(0,0,0,0.6)" }}
         >
-          Click to focus
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex items-center gap-2">
+              <CiDesktopMouse1 className="w-10 h-10" /> Click to focus
+            </div>
+            <div className="flex items-center gap-2">
+              <FaKeyboard className="w-10 h-10" /> WASD to move
+            </div>
+            <div className="flex items-center gap-2">
+              <GiFishEscape className="w-10 h-10" /> Escape to unlock cursor
+            </div>
+          </div>
         </div>
       )}
       <Canvas camera={{ fov: 75, position: [-11.3, EYE_HEIGHT, 23] }}>
@@ -323,6 +396,11 @@ export default function App() {
             addToOctree
             onLoad={() => setLoaded(true)}
             collisionOnly
+          />
+          {/* Floating hologram image at world spawn */}
+          <FloatingHologramImage
+            position={[-10, EYE_HEIGHT, 24]}
+            imageUrl="/constitution.jpg"
           />
         </Suspense>
         {loaded && <FPSControls />}
